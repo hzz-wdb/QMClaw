@@ -29,6 +29,9 @@ from ..common.quantum_tools import (
 # quantum_service 地址
 QUANTUM_SERVICE_URL = "http://localhost:3003"
 
+# workflow_service 地址（工作流工具组；create/cancel 不对 agent 暴露）
+WORKFLOW_SERVICE_URL = "http://localhost:3008"
+
 # analysis_service 地址：用于复现 experiments 页那张图
 # （/plot/offline/v2 由 offline_data_lab.OfflineQubitUpdater.fitData 绘图）
 ANALYSIS_SERVICE_URL = "http://localhost:3004"
@@ -208,7 +211,8 @@ def _http_call(url: str, data: dict = None, method: str = "GET") -> dict:
 
 def setup_agent_tools(
     registry: ToolRegistry,
-    quantum_service_url: str = QUANTUM_SERVICE_URL
+    quantum_service_url: str = QUANTUM_SERVICE_URL,
+    workflow_service_url: str = WORKFLOW_SERVICE_URL,
 ) -> ToolRegistry:
     """设置 agent_service 的工具到注册中心
 
@@ -217,6 +221,7 @@ def setup_agent_tools(
     Args:
         registry: 工具注册中心实例
         quantum_service_url: quantum_service 地址
+        workflow_service_url: workflow_service 地址（agent 只拿 4 个只读/运行工具）
 
     Returns:
         注册了工具的 ToolRegistry 实例
@@ -247,6 +252,20 @@ def setup_agent_tools(
             return _get_data_source(quantum_service_url) == "offline"
         except Exception:
             return False
+
+    def workflow_run_guard() -> Optional[str]:
+        """运行工作流前的 agent 侧预检（闸门只在服务端强制，这里只是提前解释）。
+
+        口径与 B1 对齐：离线可跑；在线且写闸门关闭则拒绝并给出人话解释。
+        判不出（异常）时放行——服务端仍会强制。
+        """
+        try:
+            if actuation_flags().get("allow_execute", True) or is_offline():
+                return None
+            return ("当前为只读联调（写闸门关闭），不能运行工作流；"
+                    "离线模式可运行，或请人工开闸后重试")
+        except Exception:
+            return None
 
     def get_qubits() -> List[Dict[str, Any]]:
         """获取量子比特列表"""
@@ -346,6 +365,17 @@ def setup_agent_tools(
     ))
     registry.register_tool(ListHistoryTool(list_history))
 
+    # 工作流工具组：与 Hermes 共用同一份实现，但 agent 只暴露 4 个
+    # （不暴露 create/cancel；run 前加只读闸门预检）
+    from ..common.quantum_tools.workflow_tools import setup_workflow_tools
+
+    setup_workflow_tools(
+        registry,
+        workflow_service_url,
+        tools=["workflow_list", "workflow_run", "workflow_status", "workflow_stats"],
+        run_guard=workflow_run_guard,
+    )
+
     return registry
 
 
@@ -356,18 +386,28 @@ class AgentServiceAdapter:
     通过 HTTP 调用 quantum_service。
     """
 
-    def __init__(self, quantum_service_url: str = QUANTUM_SERVICE_URL):
+    def __init__(
+        self,
+        quantum_service_url: str = QUANTUM_SERVICE_URL,
+        workflow_service_url: str = WORKFLOW_SERVICE_URL,
+    ):
         """
         Args:
             quantum_service_url: quantum_service 地址
+            workflow_service_url: workflow_service 地址
         """
         self._quantum_service_url = quantum_service_url
+        self._workflow_service_url = workflow_service_url
         self._registry = ToolRegistry()
         self._setup_tools()
 
     def _setup_tools(self):
         """设置工具"""
-        setup_agent_tools(self._registry, self._quantum_service_url)
+        setup_agent_tools(
+            self._registry,
+            self._quantum_service_url,
+            workflow_service_url=self._workflow_service_url,
+        )
 
     def set_quantum_service_url(self, url: str):
         """设置 quantum_service 地址"""

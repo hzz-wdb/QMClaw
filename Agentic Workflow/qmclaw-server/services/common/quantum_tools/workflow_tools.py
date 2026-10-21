@@ -182,12 +182,16 @@ class RunWorkflowTool(QuantumTool):
     def __init__(
         self,
         runner: Callable[[str, Dict], Dict[str, Any]],
+        guard: Optional[Callable[[], Optional[str]]] = None,
     ):
         """
         Args:
             runner: 工作流运行函数，签名为 (workflow_id: str, context: Dict) -> Dict
+            guard: 运行前预检。返回非空字符串表示拒绝（作为错误文案返回），
+                返回 None 表示放行。默认 None（不做预检，保持既有行为）。
         """
         self._runner = runner
+        self._guard = guard
 
     @property
     def name(self) -> str:
@@ -234,6 +238,17 @@ Provides context variables that will be available to workflow nodes."""
             )
 
         context = context or {}
+
+        # 运行前预检：闸门只在服务端强制，这里只是提前解释。
+        if self._guard is not None:
+            reason = self._guard()
+            if reason:
+                return ToolResult.err(
+                    reason,
+                    error_code=ErrorCode.FORBIDDEN.value,
+                    status="read_only",
+                    actuation_allowed=False,
+                )
 
         try:
             result = self._runner(workflow_id, context)
@@ -307,7 +322,10 @@ Returns node statuses and any available results."""
 
         try:
             result = self._status_getter(workflow_id)
-            if result.get("success"):
+            # workflow_service 的 /workflows/status 不返回 success 字段，
+            # 只返回 id/name/status/nodes/…；这里兼容两种契约（既有 Hermes 也受益）：
+            #   有 success=True，或同时带 id + status → 视为成功；只有 error → 失败。
+            if result.get("success") or ("id" in result and "status" in result):
                 return ToolResult.ok(data=result)
             else:
                 return ToolResult.err(
@@ -442,7 +460,9 @@ Returns total runs, completed, failed counts, and average duration."""
 
         try:
             result = self._stats_getter(workflow_id)
-            if result.get("success"):
+            # workflow_service 的 /runs/stats 同样不返回 success 字段，
+            # 只返回 totalRuns/completedRuns/failedRuns/avgDuration…；兼容两种契约。
+            if result.get("success") or "totalRuns" in result:
                 return ToolResult.ok(data=result)
             else:
                 return ToolResult.err(
@@ -459,13 +479,18 @@ Returns total runs, completed, failed counts, and average duration."""
 
 def setup_workflow_tools(
     registry,
-    workflow_service_url: str = "http://localhost:3008"
+    workflow_service_url: str = "http://localhost:3008",
+    tools: Optional[List[str]] = None,
+    run_guard: Optional[Callable[[], Optional[str]]] = None,
 ) -> None:
     """设置 Workflow 工具到注册中心
 
     Args:
         registry: 工具注册中心实例
         workflow_service_url: Workflow Service 地址
+        tools: 要注册的工具名子集。None（默认）表示注册全部 6 个，
+            传入列表则只注册列表内的工具，未知名字打印警告后跳过。
+        run_guard: 透传给 RunWorkflowTool 的运行前预检（返回拒绝文案或 None）
     """
 
     def list_workflows() -> Dict[str, Any]:
@@ -514,10 +539,27 @@ def setup_workflow_tools(
         result = _http_call(f"{workflow_service_url}/runs/stats/{workflow_id}")
         return result
 
-    # 注册工具
-    registry.register_tool(ListWorkflowsTool(list_workflows))
-    registry.register_tool(CreateWorkflowTool(create_workflow))
-    registry.register_tool(RunWorkflowTool(run_workflow))
-    registry.register_tool(GetWorkflowStatusTool(get_workflow_status))
-    registry.register_tool(CancelWorkflowTool(cancel_workflow))
-    registry.register_tool(GetWorkflowStatsTool(get_workflow_stats))
+    # 构造 6 个工具（保持既有实例与顺序），再按 tools 过滤注册
+    tools_by_name: Dict[str, QuantumTool] = {
+        "workflow_list": ListWorkflowsTool(list_workflows),
+        "workflow_create": CreateWorkflowTool(create_workflow),
+        "workflow_run": RunWorkflowTool(run_workflow, guard=run_guard),
+        "workflow_status": GetWorkflowStatusTool(get_workflow_status),
+        "workflow_cancel": CancelWorkflowTool(cancel_workflow),
+        "workflow_stats": GetWorkflowStatsTool(get_workflow_stats),
+    }
+
+    if tools is None:
+        wanted = list(tools_by_name.keys())
+    else:
+        wanted = list(tools)
+
+    for name in wanted:
+        tool = tools_by_name.get(name)
+        if tool is None:
+            print(
+                f"WARNING: setup_workflow_tools: unknown tool '{name}' ignored "
+                f"(available: {', '.join(tools_by_name)})"
+            )
+            continue
+        registry.register_tool(tool)

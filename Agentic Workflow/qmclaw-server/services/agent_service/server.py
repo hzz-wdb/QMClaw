@@ -234,6 +234,15 @@ class AgentService(BaseService):
 注意:
 - 不要自己编写 sq.* 代码，一律通过 run_experiment 工具执行
 - 量子比特名称形如 q10lu12（q + 行列号），实验名用小写
+
+工作流能力:
+5. 用户提到"工作流/workflow/流程编排"时：workflow_list 列出已有工作流 →
+   workflow_run {workflow_id} 运行 → workflow_status {workflow_id} 查进度 →
+   workflow_stats {workflow_id} 看历史统计
+6. 工作流是异步的：workflow_run 只启动并返回 id，进度必须用 workflow_status 查；
+   不要反复立即轮询，也不要假装它已经跑完
+7. 你没有创建/取消工作流的权限；用户要新建请让他在前端画布创建
+8. 在线模式且写闸门关闭时 workflow_run 会被拒绝，如实向用户解释（离线模式可运行）
 """
 
         # quantum_service 地址（通过 HTTP 调用）
