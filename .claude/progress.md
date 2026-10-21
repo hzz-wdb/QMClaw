@@ -1397,3 +1397,21 @@ Browser → Express (:3002) → Python subprocess → Hermes AIAgent
 - **新发现（已登记 BACKLOG I5，P1）**：**并发 `/execute` 使服务挂死**——19:56 两个并发离线实验服务端都跑完出图，但响应双双未回，此后 quantum `:3003` 与 hermes `:3012` 全无响应（TCP 可连、HTTP 无响应），重启后恢复；**与 B1（单线程 HTTPServer）不同源**
 - **施工方式**：brain-worker-team（Lead 拆单/侦察/对抗式审查/亲自 live 验收；打手为 deepseek-flash——本机 `settings.yaml` 缺失使 `subagent` 显式模型选择被禁用，靠「Lead=flash → 子代继承」达成，见 BACKLOG I6）
 - **提交**：`feat(hermes)` + `fix(agent)` ×2 + `docs`
+
+---
+## 2026-10-22  agent 端接入 workflow 工具组（v1，独立分支 feat/agent-workflow-tools）
+- **范围**：feat（分支 `feat/agent-workflow-tools`，基于 `main` = `0a04184`）
+- **背景**：workflow 工具组（6 个 `QuantumTool`）早已存在且 **Hermes 已挂**（`qmclaw_toolsets=["quantum","analysis","workflow"]`），但 `agent_service` **零引用** → agent 对话无法调用工作流。本次是**接线**，不是新功能；且**不是 MCP**（agent 走进程内 `ToolRegistry`；MCP 是 Hermes/外部客户端的通道）。
+- **改动（4 文件）**：
+  1. `services/common/quantum_tools/workflow_tools.py`：`RunWorkflowTool` 加 `guard` 运行前预检；`setup_workflow_tools` 加 `tools` 子集过滤 + `run_guard` 透传（默认值保持 Hermes 现状）
+  2. `services/agent_service/adapter.py`：`WORKFLOW_SERVICE_URL` + `workflow_run_guard()`（离线/开闸放行；在线+关闸返回人话拒绝；异常放行交给服务端）+ 注册 4 个工具（**create/cancel 不暴露**）+ Adapter 透传 URL
+  3. `services/agent_service/server.py`：系统提示追加「工作流能力」第 5–8 条（异步语义/无 create 权限/闸门解释）
+  4. `tests/test_agent_workflow_tools.py`（新，8 例）
+- **live 验收发现并修复的既有 bug（Lead 微调）**：`workflow_status` / `workflow_stats` 工具硬要求 `success` 字段，而 `workflow_service` 的 `/workflows/status`（返回 `id/status/nodes…`）与 `/runs/stats`（返回 `totalRuns/…`）**从不返回 success** → 必然 `EXECUTION_ERROR: Failed to get …`（**Hermes 同病**）。已在工具层做兼容（有 `success` 或带业务键即成功），并补 3 条回归测试
+- **验证（Lead 亲跑/live，不信打手自述）**：
+  - `tests/test_agent_workflow_tools.py` **8 passed**；全量 **90 passed / 0 failed / 0 skipped**
+  - `/api/agent/tools` → 10 个工具，`workflow_*` 恰 4 个，`workflow_create/cancel` 缺席
+  - live：agent 对话「列出工作流」→ `workflow_list`；「运行 wf_xxx」→ `workflow_run` 离线跑通（**T1≈8.00 µs**、dataset 00398）；「跑完了吗/节点状态+统计」→ `workflow_status`+`workflow_stats` 返回 completed + 节点表
+  - 写闸门仍关闭；离线豁免语义生效
+- **交付**：分支已推送 fork；**独立 PR 待 PR #7 合并后**基于最新 mentor/main 提（保证该 PR 只含本次 ~4 文件）
+- **遗留**：`workflow_service` 侧 status/stats 仍不返回 `success`（工具层已容错，建议后续服务端统一，单独小 PR）；workflow 存内存、重启即丢

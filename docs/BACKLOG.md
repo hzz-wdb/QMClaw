@@ -543,3 +543,5 @@ D1 / D2（有空再说）
 | I5 | **并发 `/execute` 导致服务挂死**（新发现，P1） | 19:56 两个并发离线实验**服务端都跑完并出图**（有时间戳为证），但 HTTP 响应双双未回客户端；此后 quantum `:3003` 与 hermes `:3012` 全部无响应（TCP 可连、HTTP 无响应），重启微服务后才恢复。与 B1（单线程 `HTTPServer`）**不同源**，疑 stdout 管道阻塞或线程/句柄耗尽。建议（约定 6：同类问题已出现两次以上）：给 `/execute` 加**请求级日志 + 耗时/超时监控**，并写可复现脚本 | ⬜ |
 | I6 | `settings.yaml` 被改名 → subagent 模型选择禁用 | `C:\Users\39045\.dsh\settings.yaml` 不存在，只剩 `settings.yaml.imported`（内容含 `subagent-model-selection.enabled: true`）→ `subagent` 传 `provider/model` 报 `child model selection is disabled for this tool instance`。本次靠「Lead=deepseek-flash → 子代继承」达成便宜打手。恢复：把 `.imported` 复制回 `settings.yaml`（**用户级配置，待人工确认**） | ⬜ |
 | I7 | ~~`start_all_services.py` 打印 API Key **值**~~ | **已修（2026-10-14）**：改为只打印 `(set)/(not set)`，密钥值不再进终端/日志 | ✅ |
+| I8 | `workflow_service` 的 `/workflows/status`、`/runs/stats` 不返回 `success` 字段 | 与 `quantum_tools/workflow_tools.py` 契约不一致：工具原实现硬要求 `success` → **status/stats 必然 EXECUTION_ERROR**（Hermes 同病）。**工具层已于 2026-10-22 容错**（有 success 或带业务键即成功）；建议服务端统一返回 `success: true` 避免其它消费者再踩 | ⬜ |
+| I9 | workflow 存内存、重启即丢 | `workflow_service._workflows` 是进程内 dict；agent 只能运行「已存在」的工作流（v1 不暴露 create）。重启后列表清空 → live 验收需重建 | ⏸ 已知 |
