@@ -1415,3 +1415,12 @@ Browser → Express (:3002) → Python subprocess → Hermes AIAgent
   - 写闸门仍关闭；离线豁免语义生效
 - **交付**：分支已推送 fork；**独立 PR 待 PR #7 合并后**基于最新 mentor/main 提（保证该 PR 只含本次 ~4 文件）
 - **遗留**：`workflow_service` 侧 status/stats 仍不返回 `success`（工具层已容错，建议后续服务端统一，单独小 PR）；workflow 存内存、重启即丢
+
+### 2026-10-29 v1.1：agent 查询工作流结果时带图/带指标
+- **现象（用户报）**：agent 调 `workflow_status` 能拿到状态，但**没有图**（`charts=0`），与直接 `run_experiment` 的体验不一致
+- **根因**：agent 的图表/指标收集器只读工具结果**顶层** `data["plots"]` / `data["results"]`（`agent_service/server.py:629/623`），而 workflow_service 把节点产物埋在 `nodes[].result.plotPath`、`nodes[].result.metrics`、`nodes[].result.dataset_id` → 收集不到
+- **修复（工具层，一次改动 Hermes 同受益）**：`workflow_tools.py` 新增 `_attach_node_artifacts()`；`GetWorkflowStatusTool.execute` 成功时把节点 `plotPath`→顶层 `plots[]`、`metrics`→顶层 `results{}`、`dataset_id`→顶层 + `ToolResult.metadata`；无结果节点不臆造字段
+- **验证（Lead 亲跑）**：
+  - 单测：`tests/test_agent_workflow_tools.py` **9 passed / 1 skipped**（新增 2 条：产物提升、无结果不造字段）；全量 **90 passed / 0 failed / 0 skipped**
+  - **live**：agent 对话「工作流 wf_xxx 跑完了吗？把节点结果和图给我」→ `charts=1`（`/plots/offline_sim_t1_1793212408050.png`）；episode 落盘顶层 `charts` + `dataset_id=20251103_00398`（**回放不丢图**）
+- **提交**：`fix(agent): workflow_status 回传节点图与指标（v1.1）`
