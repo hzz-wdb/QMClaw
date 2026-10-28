@@ -32,6 +32,9 @@ QUANTUM_SERVICE_URL = "http://localhost:3003"
 # workflow_service 地址（工作流工具组；create/cancel 不对 agent 暴露）
 WORKFLOW_SERVICE_URL = "http://localhost:3008"
 
+# qubitclient_service 地址（图像分析工具组；:3010 的 VLM 只分析已存在的图）
+QUBITCLIENT_SERVICE_URL = "http://localhost:3010"
+
 # analysis_service 地址：用于复现 experiments 页那张图
 # （/plot/offline/v2 由 offline_data_lab.OfflineQubitUpdater.fitData 绘图）
 ANALYSIS_SERVICE_URL = "http://localhost:3004"
@@ -213,6 +216,7 @@ def setup_agent_tools(
     registry: ToolRegistry,
     quantum_service_url: str = QUANTUM_SERVICE_URL,
     workflow_service_url: str = WORKFLOW_SERVICE_URL,
+    qubitclient_service_url: str = QUBITCLIENT_SERVICE_URL,
 ) -> ToolRegistry:
     """设置 agent_service 的工具到注册中心
 
@@ -222,6 +226,7 @@ def setup_agent_tools(
         registry: 工具注册中心实例
         quantum_service_url: quantum_service 地址
         workflow_service_url: workflow_service 地址（agent 只拿 4 个只读/运行工具）
+        qubitclient_service_url: qubitclient_service 地址（VLM 图像分析）
 
     Returns:
         注册了工具的 ToolRegistry 实例
@@ -376,6 +381,11 @@ def setup_agent_tools(
         run_guard=workflow_run_guard,
     )
 
+    # 图像分析工具组：分析服务器上已存在的实验图（不做聊天上传）
+    from ..common.quantum_tools.image_tools import setup_image_tools
+
+    setup_image_tools(registry, qubitclient_service_url)
+
     return registry
 
 
@@ -390,14 +400,17 @@ class AgentServiceAdapter:
         self,
         quantum_service_url: str = QUANTUM_SERVICE_URL,
         workflow_service_url: str = WORKFLOW_SERVICE_URL,
+        qubitclient_service_url: str = QUBITCLIENT_SERVICE_URL,
     ):
         """
         Args:
             quantum_service_url: quantum_service 地址
             workflow_service_url: workflow_service 地址
+            qubitclient_service_url: qubitclient_service 地址（VLM 图像分析）
         """
         self._quantum_service_url = quantum_service_url
         self._workflow_service_url = workflow_service_url
+        self._qubitclient_service_url = qubitclient_service_url
         self._registry = ToolRegistry()
         self._setup_tools()
 
@@ -407,6 +420,7 @@ class AgentServiceAdapter:
             self._registry,
             self._quantum_service_url,
             workflow_service_url=self._workflow_service_url,
+            qubitclient_service_url=self._qubitclient_service_url,
         )
 
     def set_quantum_service_url(self, url: str):

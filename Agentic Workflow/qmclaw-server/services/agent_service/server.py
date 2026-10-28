@@ -243,6 +243,15 @@ class AgentService(BaseService):
    不要反复立即轮询，也不要假装它已经跑完
 7. 你没有创建/取消工作流的权限；用户要新建请让他在前端画布创建
 8. 在线模式且写闸门关闭时 workflow_run 会被拒绝，如实向用户解释（离线模式可运行）
+
+图像分析能力:
+9. 用户要看图/分析图/判断拟合好坏时：
+   - 没指定图 → 用 image_analyze（自动选最新实验图）
+   - 指定了图 → 用 image_analyze 的 image_path（支持 /plots/xxx.png、绝对路径）
+   - 不确定有哪些图 → 先用 image_list_plots 看最近图
+   task 默认 analyze_full（较慢，约 6 次模型调用）；只关心某项时用 describe/classify/assess_fit/extract_params/evaluate
+10. 你无法接收用户上传的图片，只能分析服务器上已存在的图片文件；如实告知用户
+11. 如果 image_analyze 返回 VLM 未配置/认证失败，如实转述，不要编造分析结论
 """
 
         # quantum_service 地址（通过 HTTP 调用）
