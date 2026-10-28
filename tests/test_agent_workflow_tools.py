@@ -203,3 +203,62 @@ def test_stats_tool_accepts_service_contract_without_success():
 
     assert result.success, f"应兼容无 success 字段: {result.to_dict()}"
     assert result.data.get("totalRuns") == 2
+
+
+# ── 7. 节点产物提升（v1.1：工作流的图/指标要能被 agent 通用收集器读到）──────────
+
+
+def test_status_tool_surfaces_node_plots_and_metrics():
+    """nodes[].result 里的 plotPath/metrics/dataset_id 应提升到顶层。"""
+    payload = {
+        "id": "wf_x",
+        "name": "demo",
+        "status": "completed",
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "experiment",
+                "status": "completed",
+                "result": {
+                    "plotPath": "/plots/offline_sim_t1_1.png",
+                    "metrics": {"t1": 8e-06},
+                    "dataset_id": "20251103_00398",
+                },
+            },
+            {
+                "id": "n2",
+                "type": "analysis",
+                "status": "completed",
+                "result": {"plotPath": "/plots/analysis_2.png"},
+            },
+        ],
+    }
+    tool = GetWorkflowStatusTool(lambda wid: payload)
+
+    result = tool.execute("wf_x")
+
+    assert result.success
+    assert result.data.get("plots") == [
+        "/plots/offline_sim_t1_1.png",
+        "/plots/analysis_2.png",
+    ]
+    assert result.data.get("results") == {"t1": 8e-06}
+    assert result.data.get("dataset_id") == "20251103_00398"
+    assert result.metadata.get("dataset_id") == "20251103_00398"
+
+
+def test_status_tool_without_node_results_has_no_plots_key():
+    """节点还没结果（running/pending）时不应凭空造 plots 字段。"""
+    payload = {
+        "id": "wf_x",
+        "name": "demo",
+        "status": "running",
+        "nodes": [{"id": "n1", "type": "experiment", "status": "running"}],
+    }
+    tool = GetWorkflowStatusTool(lambda wid: payload)
+
+    result = tool.execute("wf_x")
+
+    assert result.success
+    assert "plots" not in result.data
+    assert "results" not in result.data

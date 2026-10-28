@@ -45,6 +45,47 @@ def _http_call(url: str, data: dict = None, method: str = "GET") -> dict:
         return {"error": str(e)}
 
 
+def _attach_node_artifacts(data: Dict[str, Any]) -> Optional[str]:
+    """把工作流节点的产物提升到顶层，供 agent/前端的通用收集器使用。
+
+    workflow_service 的 /workflows/status 把每个节点的执行结果放在
+    nodes[].result 里（plotPath / metrics / dataset_id / data…）。agent 侧的
+    图表与数值收集器只读顶层 data["plots"] / data["results"]，因此这里做一次
+    提升 —— 同一份工具实现给 Hermes 用时也一并受益。
+
+    Returns:
+        第一个节点的 dataset_id（没有则 None），供调用方塞进 ToolResult.metadata
+    """
+    plots: List[str] = []
+    results: Dict[str, Any] = {}
+    dataset_ids: List[str] = []
+
+    for node in (data.get("nodes") or []):
+        if not isinstance(node, dict):
+            continue
+        res = node.get("result")
+        if not isinstance(res, dict):
+            continue
+        path = res.get("plotPath") or res.get("plot_path")
+        if path:
+            plots.append(path)
+        metrics = res.get("metrics")
+        if isinstance(metrics, dict):
+            results.update(metrics)
+        ds = res.get("dataset_id")
+        if ds:
+            dataset_ids.append(ds)
+
+    if plots:
+        data["plots"] = plots
+    if results:
+        data["results"] = results
+    if dataset_ids:
+        data["dataset_ids"] = dataset_ids
+        data.setdefault("dataset_id", dataset_ids[0])
+    return dataset_ids[0] if dataset_ids else None
+
+
 class ListWorkflowsTool(QuantumTool):
     """列出工作流工具"""
 
@@ -326,7 +367,13 @@ Returns node statuses and any available results."""
             # 只返回 id/name/status/nodes/…；这里兼容两种契约（既有 Hermes 也受益）：
             #   有 success=True，或同时带 id + status → 视为成功；只有 error → 失败。
             if result.get("success") or ("id" in result and "status" in result):
-                return ToolResult.ok(data=result)
+                # v1.1：把 nodes[].result 里的图/指标提升到顶层，供 agent 的
+                # 通用收集器（data["plots"] / data["results"]）直接消费。
+                data = dict(result)
+                dataset_id = _attach_node_artifacts(data)
+                if dataset_id:
+                    return ToolResult.ok(data=data, dataset_id=dataset_id)
+                return ToolResult.ok(data=data)
             else:
                 return ToolResult.err(
                     result.get("error", "Failed to get workflow status"),
