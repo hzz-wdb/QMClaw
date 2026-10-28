@@ -545,3 +545,7 @@ D1 / D2（有空再说）
 | I7 | ~~`start_all_services.py` 打印 API Key **值**~~ | **已修（2026-10-14）**：改为只打印 `(set)/(not set)`，密钥值不再进终端/日志 | ✅ |
 | I8 | `workflow_service` 的 `/workflows/status`、`/runs/stats` 不返回 `success` 字段 | 与 `quantum_tools/workflow_tools.py` 契约不一致：工具原实现硬要求 `success` → **status/stats 必然 EXECUTION_ERROR**（Hermes 同病）。**工具层已于 2026-10-22 容错**（有 success 或带业务键即成功）；建议服务端统一返回 `success: true` 避免其它消费者再踩 | ⬜ |
 | I9 | workflow 存内存、重启即丢 | `workflow_service._workflows` 是进程内 dict；agent 只能运行「已存在」的工作流（v1 不暴露 create）。重启后列表清空 → live 验收需重建 | ⏸ 已知 |
+| I10 | **agent image 工具组"接口已通、上游不可用"** | 2026-10-29 完成 `image_analyze`/`image_list_plots` 接线（agent 10→12 工具），live 证明链路通；但 `config/qubitclient.json` 的 `llm.api_key` 无效（实测 401）+ `model=deepseek-chat`（无 vision）→ 成功路径未验证。**配好有效视觉模型+key 后零代码改动即可用**（同学/后续合并处理） | ⏸ 等配置 |
+| I11 | `:3010` 健康检查**假绿** | `qubitclient_service/server.py:119-128` 只要配置段存在就 `initialized=True`，不校验 key/模型；实测 health=healthy 但调用 401。建议 health 增加一次轻量校验（或返回 config 摘要但不含密钥） | ⬜ |
+| I12 | `image_service`（:3007）ML 分类链路不可用 | `models/classifier.pth` 不存在（`model_exists:false`）→ `/classify/single` 直接报 Model not loaded；本次未涉及（只要 VLM），登记备查 | ⏸ 缺模型 |
+| I13 | `analyze_full` 耗时 = 6 次串行 VLM 调用 | 代码口径单次 120s、analyze_full 300s；合成提示词 6 个任务逐个调模型 → 实际耗时取决于上游。工具已按 300s 超时；若上游慢需改成单任务分批 | ⏸ 待实测 |

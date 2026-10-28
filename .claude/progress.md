@@ -1424,3 +1424,19 @@ Browser → Express (:3002) → Python subprocess → Hermes AIAgent
   - 单测：`tests/test_agent_workflow_tools.py` **9 passed / 1 skipped**（新增 2 条：产物提升、无结果不造字段）；全量 **90 passed / 0 failed / 0 skipped**
   - **live**：agent 对话「工作流 wf_xxx 跑完了吗？把节点结果和图给我」→ `charts=1`（`/plots/offline_sim_t1_1793212408050.png`）；episode 落盘顶层 `charts` + `dataset_id=20251103_00398`（**回放不丢图**）
 - **提交**：`fix(agent): workflow_status 回传节点图与指标（v1.1）`
+
+### 2026-10-29 agent 端接入 image 工具组（v1：只做"能连上"的接口层）
+- **范围**：分支 `feat/agent-image-tools`（从 `feat/agent-workflow-tools` 切出）。用户明确：「现在只要求你做一个接口能连上，后续我会和同学进行合并」→ 不做聊天上传、不做 ML 分类、不补 VLM key
+- **新增 `services/common/quantum_tools/image_tools.py`**：
+  - `image_analyze`：`image_path`（`/plots/xxx.png`/绝对/仓库相对/省略=最新图）、`experiment_family`（省略=文件名推断，35 族关键词表）、`task`（describe/classify/reasoning/assess_fit/extract_params/evaluate/analyze_full，默认 analyze_full）、`language`
+    - 调 `:3010`（analyze_full 超时 300s，单任务 120s）；成功回填 `report` + **原图回显**（`data.plots`）；`extract_params` 数值字段进 `data.results`
+    - **401/认证失败 → 人话错误**："VLM 未配置可用密钥（3010 认证失败）：请在 config/qubitclient.json 的 llm 段配置视觉模型与有效 key"
+  - `image_list_plots`：列 `PLOTS_DIR` 最近图（`items` 键，**绝不带 `plots`** 以免污染图表收集）
+- **接线**：`agent_service/adapter.py` 加 `QUBITCLIENT_SERVICE_URL` + `setup_image_tools`（工具 **10 → 12**）；`agent_service/server.py` 系统提示追加 9–11 条（用法/不能收上传图/失败如实转述不编造）
+- **测试**：`tests/test_agent_image_tools.py` **15 例**（全 mock HTTP，不依赖 VLM）；全量 **107 passed / 0 failed**
+- **live 验收（Lead 亲跑）**：
+  - `/api/agent/tools` → **12 个**，含 `image_analyze`/`image_list_plots`
+  - 「列出最近的实验图」→ `image_list_plots`：10 张图 + 族推断（t1）
+  - 「分析最新那张实验图」→ `image_analyze` 真实连上 `:3010`，返回 **401 的人话错误**且**不编造**分析结论 → 证明**接口链路通，缺的是上游 VLM 配置**
+- **前置未解决（留给后续合并/同学）**：`config/qubitclient.json` 的 `llm.api_key` 无效（401）+ `model=deepseek-chat`（无 vision）；配好有效视觉模型后本工具**零代码改动**即可用
+- **提交**：`feat(agent): 接入 image 分析工具组（接口层）`
