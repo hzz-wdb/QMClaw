@@ -1440,3 +1440,8 @@ Browser → Express (:3002) → Python subprocess → Hermes AIAgent
   - 「分析最新那张实验图」→ `image_analyze` 真实连上 `:3010`，返回 **401 的人话错误**且**不编造**分析结论 → 证明**接口链路通，缺的是上游 VLM 配置**
 - **前置未解决（留给后续合并/同学）**：`config/qubitclient.json` 的 `llm.api_key` 无效（401）+ `model=deepseek-chat`（无 vision）；配好有效视觉模型后本工具**零代码改动**即可用
 - **提交**：`feat(agent): 接入 image 分析工具组（接口层）`
+
+### 2026-10-31 版本对比报告（PR #7 → 当前）
+- 新增 `docs/VERSION_DIFF_PR7_TO_CURRENT.md`：对比 PR #7 head（`0a04184`）与当前 `b4904cc` 的完整差异（6 提交 / 8 文件 / +1363−14；agent 工具 6→12；测试 82→107）
+- 关键事实：**PR #7 已被导师合并**（`83ce3b9`）；导师 main 已前进到 `e3cb8fa`（PR #8，含"删除 s21peak/s21peakmulti 两个非法家族"与 qubitclient.json 兜底 ignore）
+- **待办（合并前）**：`image_tools.py` 的 `FAMILY_HINTS` 需删掉 `s21peak`/`s21peakmulti` 两条；`.gitignore` 需吸收导师兜底规则
